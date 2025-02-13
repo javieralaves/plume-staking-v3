@@ -9,11 +9,14 @@ export default function StakingRewards() {
     totalStreamingRewards,
     claimedRewards,
     streamedAmount,
-    rewardsPerSecond,
     cycleNumber,
     nextCycleIn,
+    weeklyAPY,
     claimRewards
   } = usePlume();
+
+  // Calculate annual APY from weekly
+  const annualAPY = weeklyAPY * 52;
 
   return (
     <div className="w-full p-6 bg-white dark:bg-black/30 rounded-lg border border-black/10 dark:border-white/10">
@@ -27,13 +30,8 @@ export default function StakingRewards() {
       <div className="space-y-4">
         <div className="space-y-3">
           <div className="flex justify-between items-center">
-            <span className="text-gray-600 dark:text-gray-400">Total Staked</span>
+            <span className="text-gray-600 dark:text-gray-400">Current Stake</span>
             <span className="font-medium">{stakedAmount.toFixed(2)} PLUME</span>
-          </div>
-          
-          <div className="flex justify-between items-center">
-            <span className="text-gray-600 dark:text-gray-400">Earning Rate</span>
-            <span className="font-medium">{(rewardsPerSecond * 3600).toFixed(4)} pUSD/hour</span>
           </div>
         </div>
 
@@ -48,6 +46,10 @@ export default function StakingRewards() {
             <div className="flex justify-between items-center">
               <span className="text-gray-600 dark:text-gray-400">Accumulated Rewards</span>
               <span className="font-medium">{currentCycleRewards.toFixed(4)} pUSD</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600 dark:text-gray-400">Target APY</span>
+              <span className="font-medium">{annualAPY.toFixed(1)}%</span>
             </div>
           </div>
         </div>

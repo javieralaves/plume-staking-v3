@@ -2,6 +2,16 @@
 
 import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 
+interface CycleData {
+  cycleNumber: number;
+  totalStaked: number;
+  expectedRewards: number;
+  networkRevenue: number;  // Fixed at 10 pUSD
+  pusdStreamed: number;    // Renamed from actualRevenue
+  surplus: number;
+  plumeEmissions: number;
+}
+
 interface PlumeContextType {
   availableBalance: number;
   stakedAmount: number;
@@ -9,12 +19,17 @@ interface PlumeContextType {
   totalStreamingRewards: number;
   claimedRewards: number;
   streamedAmount: number;
-  rewardsPerSecond: number;
   cycleNumber: number;
   nextCycleIn: string;
   stake: (amount: number) => void;
   unstake: (amount: number) => void;
   claimRewards: () => void;
+  cycleData: CycleData;
+  historicalCycles: CycleData[];
+  plumePrice: number;
+  weeklyAPY: number;
+  cycleEndTime: number;
+  fastForwardTime: (targetTimeLeft: number) => void;
 }
 
 const PlumeContext = createContext<PlumeContextType | undefined>(undefined);
@@ -29,19 +44,61 @@ export function PlumeProvider({ children }: { children: ReactNode }) {
   const [claimedRewards, setClaimedRewards] = useState(0);
   const [streamedAmount, setStreamedAmount] = useState(0);
   
-  // Cycle timing (5 minutes)
-  const CYCLE_DURATION = 5 * 60;
+  // Cycle timing (7 days)
+  const CYCLE_DURATION = 7 * 24 * 60 * 60; // 7 days in seconds
   const [cycleNumber, setCycleNumber] = useState(1);
-  const [nextCycleIn, setNextCycleIn] = useState('5:00');
+  const [nextCycleIn, setNextCycleIn] = useState('7:00:00:00'); // d:hh:mm:ss
   
-  // Calculate initial cycle end time
+  // Make cycleEndTime accessible to components
   const [cycleEndTime, setCycleEndTime] = useState(() => {
     const now = Math.floor(Date.now() / 1000);
     return now + CYCLE_DURATION;
   });
 
-  // Mock reward rate: 0.0001 pUSD per PLUME staked per second
-  const rewardsPerSecond = stakedAmount * 0.0001;
+  // APY calculations (not in percentage terms)
+  const ANNUAL_APY = 5; // 5%
+  const weeklyAPY = ANNUAL_APY / 52; // ~0.0961538... (5/52)
+  const [plumePrice, setPlumePrice] = useState(0.12); // pUSD per PLUME
+  const [carryOverPusd, setCarryOverPusd] = useState(0);
+  
+  // Fixed network revenue per cycle
+  const FIXED_NETWORK_REVENUE = 10; // pUSD
+  
+  // Track cycle data
+  const [cycleData, setCycleData] = useState<CycleData>({
+    cycleNumber: 1,
+    totalStaked: 0,
+    expectedRewards: 12,
+    networkRevenue: FIXED_NETWORK_REVENUE,
+    pusdStreamed: 0,
+    surplus: 0,
+    plumeEmissions: 0
+  });
+  
+  const [historicalCycles, setHistoricalCycles] = useState<CycleData[]>([]);
+
+  // Calculate rewards per second based on weekly APY
+  const calculateRewardsPerSecond = (staked: number) => {
+    // Weekly reward = staked × price × weeklyAPY
+    // For 100 PLUME: 100 × 0.12 × (5/52) = 1.1538461538 pUSD per week
+    const weeklyRewards = staked * plumePrice * weeklyAPY;
+    return weeklyRewards / (7 * 24 * 60 * 60);
+  };
+
+  // Fast forward function
+  const fastForwardTime = (targetTimeLeft: number) => {
+    const now = Math.floor(Date.now() / 1000);
+    const newEndTime = now + targetTimeLeft;
+    
+    // Calculate rewards for the fast-forwarded period
+    const timeSkipped = cycleEndTime - newEndTime;
+    if (timeSkipped > 0 && stakedAmount > 0) {
+      const rewardsPerSecond = calculateRewardsPerSecond(stakedAmount);
+      setCurrentCycleRewards(prev => prev + (rewardsPerSecond * timeSkipped));
+    }
+    
+    setCycleEndTime(newEndTime);
+  };
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -49,25 +106,63 @@ export function PlumeProvider({ children }: { children: ReactNode }) {
       const timeLeft = cycleEndTime - now;
       
       if (timeLeft >= 0) {
-        // Update countdown timer
-        const minutes = Math.floor(timeLeft / 60);
+        // Update countdown timer with days
+        const days = Math.floor(timeLeft / (24 * 60 * 60));
+        const hours = Math.floor((timeLeft % (24 * 60 * 60)) / (60 * 60));
+        const minutes = Math.floor((timeLeft % (60 * 60)) / 60);
         const seconds = timeLeft % 60;
-        setNextCycleIn(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+        setNextCycleIn(
+          `${days}:${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+        );
         
         // Accumulate rewards for current cycle
         if (stakedAmount > 0) {
+          const rewardsPerSecond = calculateRewardsPerSecond(stakedAmount);
           setCurrentCycleRewards(prev => prev + rewardsPerSecond);
         }
       } else {
-        // Handle cycle transition
+        // Handle cycle transition with fixed network revenue
+        const actualRevenue = FIXED_NETWORK_REVENUE + carryOverPusd;
+        const expectedRewards = stakedAmount * plumePrice * weeklyAPY;
+        
+        let surplus = actualRevenue - expectedRewards;
+        let plumeEmissions = 0;
+        
+        if (surplus < 0) {
+          plumeEmissions = Math.abs(surplus) / plumePrice;
+          surplus = 0;
+        }
+        
+        // First update cycle number
+        const nextCycleNumber = cycleNumber + 1;
+        setCycleNumber(nextCycleNumber);
+        
+        // Store current cycle data in history before creating new cycle data
+        setHistoricalCycles(prev => [...prev, {
+          ...cycleData,
+          cycleNumber: cycleNumber // Store with current cycle number
+        }]);
+        
+        // Create new cycle data with the next cycle number
+        const newCycleData = {
+          cycleNumber: nextCycleNumber,
+          totalStaked: stakedAmount,
+          expectedRewards,
+          networkRevenue: FIXED_NETWORK_REVENUE,
+          pusdStreamed: currentCycleRewards,
+          surplus,
+          plumeEmissions
+        };
+        
+        setCycleData(newCycleData);
+        setCarryOverPusd(surplus);
+        
+        // Handle rewards transition
         if (currentCycleRewards > 0) {
-          // Lock current rewards and move to streaming
           setTotalStreamingRewards(currentCycleRewards);
           setCurrentCycleRewards(0);
           setClaimedRewards(0);
           setStreamedAmount(0);
-          setCycleNumber(prev => prev + 1);
-          console.log('New reward cycle started!');
         }
         
         // Start new cycle
@@ -85,7 +180,7 @@ export function PlumeProvider({ children }: { children: ReactNode }) {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [cycleEndTime, currentCycleRewards, totalStreamingRewards, claimedRewards, stakedAmount, rewardsPerSecond]);
+  }, [cycleEndTime, currentCycleRewards, totalStreamingRewards, claimedRewards, stakedAmount, carryOverPusd, plumePrice, cycleNumber, cycleData]);
 
   const stake = (amount: number) => {
     if (amount <= availableBalance) {
@@ -117,12 +212,17 @@ export function PlumeProvider({ children }: { children: ReactNode }) {
         totalStreamingRewards,
         claimedRewards,
         streamedAmount,
-        rewardsPerSecond,
         cycleNumber,
         nextCycleIn,
         stake,
         unstake,
-        claimRewards 
+        claimRewards,
+        cycleData,
+        historicalCycles,
+        plumePrice,
+        weeklyAPY,
+        cycleEndTime,
+        fastForwardTime
       }}
     >
       {children}
