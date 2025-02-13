@@ -58,7 +58,7 @@ export function PlumeProvider({ children }: { children: ReactNode }) {
   // APY calculations (not in percentage terms)
   const ANNUAL_APY = 5; // 5%
   const weeklyAPY = ANNUAL_APY / 52; // ~0.0961538... (5/52)
-  const [plumePrice, setPlumePrice] = useState(0.12); // pUSD per PLUME
+  const [plumePrice] = useState(0.12); // pUSD per PLUME
   const [carryOverPusd, setCarryOverPusd] = useState(0);
   
   // Fixed network revenue per cycle
@@ -180,7 +180,20 @@ export function PlumeProvider({ children }: { children: ReactNode }) {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [cycleEndTime, currentCycleRewards, totalStreamingRewards, claimedRewards, stakedAmount, carryOverPusd, plumePrice, cycleNumber, cycleData]);
+  }, [
+    cycleEndTime, 
+    currentCycleRewards, 
+    totalStreamingRewards, 
+    claimedRewards, 
+    stakedAmount, 
+    carryOverPusd, 
+    plumePrice, 
+    cycleNumber, 
+    cycleData,
+    CYCLE_DURATION,
+    calculateRewardsPerSecond,
+    weeklyAPY
+  ]);
 
   const stake = (amount: number) => {
     if (amount <= availableBalance) {

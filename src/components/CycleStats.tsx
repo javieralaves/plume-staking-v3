@@ -5,10 +5,7 @@ import { usePlume } from '@/context/PlumeContext';
 export default function CycleStats() {
   const { 
     cycleData, 
-    historicalCycles, 
-    cycleNumber,
-    weeklyAPY,
-    plumePrice
+    historicalCycles
   } = usePlume();
 
   return (

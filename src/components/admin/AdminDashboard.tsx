@@ -9,7 +9,6 @@ export default function AdminDashboard() {
   const { 
     cycleData,
     historicalCycles,
-    cycleNumber,
     weeklyAPY,
     plumePrice
   } = usePlume();
